@@ -1,2 +1,4 @@
 1.0	20190930	Allen Tse
 	Uploaded to github.com and open-sourced.
+2.2	20191030	Allen Tse
+	Bundled import and export. Export only for managers.

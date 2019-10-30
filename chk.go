@@ -69,7 +69,7 @@ func listTask1Member1Week(db *sql.DB, member []string, week int, weekDesc, table
 	eztools.ShowStrln("Now, to add tasks.")
 	for {
 		horizontal(20)
-		switch addTask(db, member, week, weekDesc, table) {
+		switch addTaskUI(db, member, week, weekDesc, table) {
 		case eztools.ErrInvalidInput:
 			//skipMember = true
 			return

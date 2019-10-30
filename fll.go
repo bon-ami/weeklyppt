@@ -35,7 +35,7 @@ func modTask(db *sql.DB, table string, member, id []string) {
 	}
 	descID, err := chooseOrAddTaskDesc(db, secStr)
 	if err == nil {
-		modTaskExec(db, secStr, descID)
+		modTaskExec(db, id[0], descID)
 	}
 }
 
@@ -60,8 +60,12 @@ func chooseOrAddTaskDesc(db *sql.DB, section string) (descID int, err error) {
 
 func addTaskDesc(db *sql.DB, desc string) (descID int, err error) {
 	descID, err = eztools.Locate(db, eztools.TblWEEKLYTASKDESC, desc)
-	if err != nil || descID != eztools.DefID {
-		//error or one in existence
+	if err != nil {
+		eztools.LogErrPrint(err)
+		return
+	}
+	if descID != eztools.DefID {
+		//already in existence
 		return
 	}
 	descID, err = eztools.AddPairNoID(db, eztools.TblWEEKLYTASKDESC, desc)
@@ -97,11 +101,14 @@ func chooseSection(db *sql.DB, table, desc string) (section int, err error) {
 		return
 	}
 	section, err = eztools.GetPairID(db, table, strconv.Itoa(section))
+	if err != nil {
+		eztools.LogErrPrint(err)
+	}
 	return
 }
 
 //parameters: member[0]:ID; [1]:name
-func addTask(db *sql.DB, member []string, week int, weekDesc, table string) (err error) {
+func addTaskUI(db *sql.DB, member []string, wk int, weekDesc, table string) (err error) {
 	section, err := chooseSection(db, table,
 		"Choose one section for the new task for "+
 			member[1]+" of "+weekDesc)
@@ -114,9 +121,7 @@ func addTask(db *sql.DB, member []string, week int, weekDesc, table string) (err
 		eztools.LogErrPrint(err)
 		return
 	}
-	_, err = eztools.AddWtParamsUniq(db, eztools.TblWEEKLYTASKWORK,
-		[]string{eztools.FldSTR, "contact", "section", "week"},
-		[]string{strconv.Itoa(desc), member[0], secStr, strconv.Itoa(week)}, true)
+	err = addTask(db, strconv.Itoa(desc), member[0], secStr, strconv.Itoa(wk))
 	if err != nil {
 		eztools.LogErrPrint(err)
 	}
@@ -151,7 +156,7 @@ func queryTasks(db *sql.DB, table string, member []string, id [][]string) (skipW
 	case 1:
 		i, err = promptID("delete", len(id))
 		if err == nil {
-			err = eztools.Delete(db, eztools.TblWEEKLYTASKWORK, id[i][0])
+			err = eztools.DeleteWtID(db, eztools.TblWEEKLYTASKWORK, id[i][0])
 		}
 	case 3:
 		skipMember = true

@@ -2,7 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"path"
+	"io"
+	"path/filepath"
 	"strconv"
 
 	"github.com/bon-ami/eztools"
@@ -36,6 +37,9 @@ func addTB(slide *presentation.Slide, upper bool) *presentation.TextBox {
 }
 
 func addBanner(slide *presentation.Slide, title string) {
+	if eztools.Verbose > 1 {
+		eztools.Log("to export title " + title)
+	}
 	tb := addTB(slide, true)
 	p := tb.AddParagraph()
 	p.Properties().SetAlign(dml.ST_TextAlignTypeCtr)
@@ -77,6 +81,9 @@ func addParagraphTitle(tb *presentation.TextBox, size measurement.Distance, titl
 }
 
 func addParagraphCont(tb *presentation.TextBox, size measurement.Distance, cont string) {
+	if eztools.Debugging && eztools.Verbose > 1 {
+		eztools.Log("to export cont " + cont)
+	}
 	p := tb.AddParagraph()
 	p.Properties().SetBulletChar("-")
 	paragraphSpacing(&p)
@@ -87,7 +94,7 @@ func addParagraphCont(tb *presentation.TextBox, size measurement.Distance, cont 
 }
 
 func nameID2Str(db *sql.DB, id string) string {
-	name, err := contacts.GetMail(db, id)
+	name, err := contacts.GetLdap(db, id)
 	if err != nil {
 		eztools.LogErr(err)
 		name = "?"
@@ -113,6 +120,10 @@ func addCont(db *sql.DB, tb *presentation.TextBox, sectionID, sectionStr string,
 	workID := searched[0][0]
 	name := nameID2Str(db, searched[0][1])
 	quan := len(searched)
+	if quan == 1 {
+		add1Task(db, tb, name, searched[0][0])
+		return
+	}
 	for i := 1; i < quan; i++ {
 		if searched[i][0] == workID && i != 0 {
 			name += ", " + nameID2Str(db, searched[i][1])
@@ -169,7 +180,7 @@ func wrSlide(db *sql.DB, ppt *presentation.Presentation, table string, maxID int
 		week1 = week + 1
 	}
 	headline, err := eztools.GetPairStrFromInt(db, eztools.TblWEEKLYTASKBARS, headnum)
-	if err == nil {
+	if err != nil {
 		eztools.LogErrPrint(err)
 		return
 	}
@@ -204,7 +215,7 @@ func wrWeek(db *sql.DB, ppt *presentation.Presentation, table string) {
 		eztools.ShowStrln("Max ID is not a number in " + table)
 		return
 	}
-	if eztools.Debugging {
+	if eztools.Debugging && eztools.Verbose > 1 {
 		eztools.Log("Max ID=" + strconv.Itoa(maxID))
 	}
 	for i := 10; i < (maxID + 10); i += 10 {
@@ -218,14 +229,15 @@ func wrWeek(db *sql.DB, ppt *presentation.Presentation, table string) {
 			break
 		}
 		if len(searched) < 1 {
+			eztools.Log("NO content found for section range " + strconv.Itoa(i))
 			continue
 		}
 		wrSlide(db, ppt, table, maxID, searched)
 	}
 }
 
-func wr(db *sql.DB, file string) {
-	ppt := presentation.New()
+func wrPrepare(db *sql.DB) (ppt *presentation.Presentation, err error) {
+	ppt = presentation.New()
 	ppt.X().CT_Presentation.SldSz = pml.NewCT_SlideSize()
 	ppx := ppt.X().CT_Presentation.SldSz
 	ppx.TypeAttr = pml.ST_SlideSizeTypeScreen16x9
@@ -233,17 +245,40 @@ func wr(db *sql.DB, file string) {
 	ppx.CyAttr = 6858000
 	wrWeek(db, ppt, eztools.TblWEEKLYTASKCURR)
 	wrWeek(db, ppt, eztools.TblWEEKLYTASKNEXT)
-	if err := ppt.Validate(); err != nil {
+	err = ppt.Validate()
+	return
+}
+
+func wrByWR(db *sql.DB, wr io.Writer) {
+	ppt, err := wrPrepare(db)
+	if err != nil {
 		eztools.LogErrFatal(err)
 	}
-	if err := ppt.SaveToFile(file + ".pptx"); err != nil {
+	err = ppt.Save(wr)
+	if err != nil {
 		eztools.LogErrFatal(err)
+	}
+}
+
+func wrByFN(db *sql.DB, file string) {
+	ppt, err := wrPrepare(db)
+	if err != nil {
+		eztools.LogErrFatal(err)
+	}
+	err = ppt.SaveToFile(file + ".pptx")
+	if err != nil {
+		eztools.LogErrFatal(err)
+	} else {
+		eztools.LogPrint("exported to " + file)
+		eztools.ShowStrln("Please consider putting it onto the server to avoid overriden from next sync!")
 	}
 }
 
 func exportPpt(db *sql.DB) {
 	if staticP, err := eztools.GetPairStr(db, eztools.TblCHORE,
 		"WeeklyPptStaticPath"); err == nil {
-		wr(db, path.Base(staticP)+strconv.Itoa(week))
+		wrByFN(db, filepath.Base(staticP)+strconv.Itoa(week))
+	} else {
+		eztools.LogErrPrint(err)
 	}
 }

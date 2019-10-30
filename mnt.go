@@ -68,12 +68,12 @@ func addTitle(db *sql.DB) {
 		if err != nil {
 			//TODO: lock the table? Tx does not work, since idS needed for these two additions
 			if idS != eztools.InvalidID {
-				if err = eztools.Delete(db, eztools.TblWEEKLYTASKTITLES, strconv.Itoa(idS)); err != nil {
+				if err = eztools.DeleteWtID(db, eztools.TblWEEKLYTASKTITLES, strconv.Itoa(idS)); err != nil {
 					eztools.LogErr(err)
 				}
 			}
 			if idI != eztools.InvalidID {
-				if err = eztools.Delete(db, eztools.TblWEEKLYTASKCURR, strconv.Itoa(idI)); err != nil {
+				if err = eztools.DeleteWtID(db, eztools.TblWEEKLYTASKCURR, strconv.Itoa(idI)); err != nil {
 					eztools.LogErr(err)
 				}
 			}
@@ -92,6 +92,22 @@ func addTitle2Layout(db *sql.DB, table, desc string, title int) (idI int, err er
 	}
 	idI, err = eztools.AddPair(db, table, idC, strconv.Itoa(title))
 	return
+}
+
+func chgTitle(db *sql.DB) {
+	id, err := eztools.ChoosePair(db, eztools.TblWEEKLYTASKTITLES)
+	if err != nil {
+		eztools.LogErrPrint(err)
+		return
+	}
+	str := eztools.PromptStr("Change it to?")
+	if len(str) > 0 {
+		err = eztools.UpdatePairWtParams(db,
+			eztools.TblWEEKLYTASKTITLES, strconv.Itoa(id), str)
+		if err != nil {
+			eztools.LogErrPrint(err)
+		}
+	}
 }
 
 func chgLayout1Add(db *sql.DB, table string, title int) {
@@ -182,6 +198,8 @@ func mnt(db *sql.DB) {
 	case 0:
 	case 1:
 		addTitle(db)
+	case 2:
+		chgTitle(db)
 	case 4:
 		chgLayout(db)
 	default:

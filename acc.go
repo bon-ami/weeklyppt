@@ -11,7 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -53,7 +53,7 @@ func getCfgFileName() string {
 		eztools.LogErr(err)
 		return cfgFileName
 	}
-	return path.Join(home, cfgFileName)
+	return filepath.Join(home, cfgFileName)
 }
 
 //func getCfgFile(mode int) (*os.File, error) {

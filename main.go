@@ -3,8 +3,9 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -44,6 +45,17 @@ func members4weeks(db *sql.DB, acc int, fc member4weeksFn) {
 	}
 }
 
+func addTaskInt(db *sql.DB, desc, member, sec, wk int) error {
+	return addTask(db, strconv.Itoa(desc), strconv.Itoa(member), strconv.Itoa(sec), strconv.Itoa(wk))
+}
+
+func addTask(db *sql.DB, desc, member, sec, wk string) error {
+	_, err := eztools.AddWtParamsUniq(db, eztools.TblWEEKLYTASKWORK,
+		[]string{eztools.FldSTR, "contact", "section", "week"},
+		[]string{desc, member, sec, wk}, false)
+	return err
+}
+
 func horizontal(level int) {
 	if level < 1 {
 		level = 30
@@ -54,30 +66,32 @@ func horizontal(level int) {
 	eztools.ShowStrln("")
 }
 
-func chkManager(db *sql.DB, acc int) bool {
+func chkManager(db *sql.DB, acc int) (su, mng bool) {
 	switch acc {
 	case 1: //super user
-		return true
+		return true, false
 	case eztools.InvalidID:
-		return false
+		return false, false
 	}
 	searched, err := eztools.Search(db, eztools.TblTEAM,
-		eztools.FldLEADER+"="+strconv.Itoa(acc), nil, "")
+		eztools.FldLEADER+"="+strconv.Itoa(acc), nil,
+		" AND "+eztools.FldID+"<10")
+	// IDs over 10 are for sub-teams
 	if err != nil {
 		eztools.LogErr(err)
-		return false
+		return false, false
 	}
 	if len(searched) > 0 {
-		return true
+		return false, true
 	}
-	return false
+	return false, false
 }
 
 func prepareEnv() (logger *os.File, db *sql.DB) {
 	_, week = time.Now().ISOWeek()
 	eztools.ShowStrln("V" + ver + ". Now it is week " + strconv.Itoa(week))
 	home, _ := os.UserHomeDir()
-	logger, err := os.OpenFile(path.Join(home, "WeeklyPpt.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	logger, err := os.OpenFile(filepath.Join(home, "WeeklyPpt.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err == nil {
 		if err = eztools.InitLogger(logger); err != nil {
 			eztools.ShowStrln(err.Error())
@@ -101,8 +115,11 @@ func prepareEnv() (logger *os.File, db *sql.DB) {
 		flagH := flag.Bool("h", false, "help messages")
 		flag.Parse()
 		if *flagH {
-			eztools.ShowStrln("V1.1 account detection, verification and encryption on saving")
 			eztools.ShowStrln("V1.0 initial release")
+			eztools.ShowStrln("V1.1 account detection, verification and encryption on saving")
+			eztools.ShowStrln("V2.0 import and export between files and database")
+			eztools.ShowStrln("V2.1 import and export correction. Export only for manager.")
+			eztools.ShowStrln("V2.2 import and export bundled to avoid writing collision.")
 			return
 		}
 	}
@@ -113,7 +130,7 @@ func prepareEnv() (logger *os.File, db *sql.DB) {
 	return
 }
 
-func main() {
+func mainLoop(fChkMng func(db *sql.DB, acc int) (su, mng bool)) {
 	logger, db := prepareEnv()
 	if logger != nil {
 		defer logger.Close()
@@ -148,20 +165,21 @@ func main() {
 		choices = append(choices, "Change account")
 	}
 
-	acc = importPpt(db, acc)
 	chkManagerNeeded := true
-	chkManagerAdded := false
 EXIT:
 	for {
 		if chkManagerNeeded {
-			if !chkManagerAdded {
-				if chkManager(db, acc) {
-					choices = append(choices, "Maintain report structure") //5
-				}
+			su, mng := fChkMng(db, acc)
+			if su {
+				choices = append(choices, "Maintain report structure")                 //4
+				choices = append(choices, "Sync from file to database")                //5
+				choices = append(choices, "Sync from file to database and write back") //6
 			} else {
-				if !chkManager(db, acc) {
-					choices = choices[:len(choices)-1]
+				if mng {
+					exportPpt(db)
+					break
 				}
+				choices = choices[:4]
 			}
 		}
 		chkManagerNeeded = false
@@ -200,8 +218,22 @@ EXIT:
 				mnt(db)
 			}
 		case 5:
-			if !fixed {
-				mnt(db)
+			acc, _ = importPpt(db, acc, false)
+		case 6:
+			var fp *os.File
+			acc, fp = importPpt(db, acc, true)
+			if fp != nil {
+				_, err = fp.Seek(0, io.SeekStart)
+				if err == nil {
+					err = fp.Truncate(0)
+					if err == nil {
+						wrByWR(db, fp)
+					}
+				}
+				fp.Close()
+				if err != nil {
+					eztools.LogErrFatal(err)
+				}
 			}
 		default:
 			eztools.LogPrint("impossible choice: " + strconv.Itoa(c))
@@ -213,4 +245,8 @@ EXIT:
 		eztools.ShowStrln("waiting for update check to end...")
 		<-upch
 	}
+}
+
+func main() {
+	mainLoop(chkManager)
 }
